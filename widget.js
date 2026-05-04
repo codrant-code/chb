@@ -1,11 +1,11 @@
 (function () {
-  console.log("🤖 Chatbot Widget v2 Loaded");
+  console.log("🤖 Chatbot Widget Loaded");
 
   const SUPABASE_URL = "https://nwldvgafmyaagmyezena.supabase.co";
   const SUPABASE_KEY = "sb_publishable_gWMY1sQRn3fqip0JfAQPRQ_F79rlYyZ";
 
   // =========================
-  // CUSTOMER ID (FIXED)
+  // CUSTOMER ID
   // =========================
   function getCustomerId() {
     let id = localStorage.getItem("cw_customer_id");
@@ -43,7 +43,7 @@
     let debounceTimer;
 
     // =========================
-    // STYLES
+    // STYLE
     // =========================
     const style = document.createElement("style");
     style.innerHTML = `
@@ -80,6 +80,7 @@
         padding: 10px;
         color: #fff;
         font-weight: bold;
+        background: #007bff;
       }
 
       #cw-messages {
@@ -122,9 +123,9 @@
       #cw-input button {
         padding: 10px;
         border: none;
+        background: #007bff;
         color: #fff;
         cursor: pointer;
-        background: #007bff;
       }
 
       /* Suggestions */
@@ -188,7 +189,6 @@
     const button = box.querySelector("button");
     const messages = box.querySelector("#cw-messages");
     const suggestionsBox = box.querySelector("#cw-suggestions");
-    const header = box.querySelector("#cw-header");
 
     function addMessage(text, type) {
       const div = document.createElement("div");
@@ -203,74 +203,69 @@
       suggestionsBox.style.display = "none";
     }
 
+    function renderSuggestions(data) {
+      suggestionsBox.innerHTML = "";
+
+      data.forEach((item) => {
+        const div = document.createElement("div");
+        div.className = "cw-suggestion";
+        div.innerText = item.question;
+
+        div.onclick = () => {
+          input.value = item.question;
+          hideSuggestions();
+        };
+
+        suggestionsBox.appendChild(div);
+      });
+
+      suggestionsBox.style.display = "block";
+    }
+
     // =========================
-    // 🔥 FIXED SUGGESTIONS (IMPORTANT)
+    // 🔥 FIXED DB SUGGESTIONS (IMPORTANT)
     // =========================
     async function fetchSuggestions(keyword) {
-  const clean = keyword.trim().toLowerCase();
+      const clean = keyword.trim();
 
-  if (!clean) {
-    hideSuggestions();
-    return;
-  }
+      if (!clean) {
+        hideSuggestions();
+        return;
+      }
 
-  // =========================
-  // STEP 1: PREFIX MATCH (BEST)
-  // =========================
-  let { data, error } = await sb
-    .from("faq_questions")
-    .select("question")
-    .eq("customer_id", customer_id)
-    .ilike("question", `${clean}%`)
-    .order("question", { ascending: true })
-    .limit(6);
+      // 1️⃣ PRIMARY: prefix match (h → all h*, what → what*)
+      let { data, error } = await sb
+        .from("faq_questions")
+        .select("question")
+        .eq("customer_id", customer_id)
+        .ilike("question", `${clean}%`)
+        .limit(8);
 
-  if (error) {
-    console.error(error);
-    hideSuggestions();
-    return;
-  }
+      if (error) {
+        console.error(error);
+        hideSuggestions();
+        return;
+      }
 
-  // =========================
-  // STEP 2: FALLBACK MATCH (if empty)
-  // =========================
-  if (!data || data.length === 0) {
-    const res = await sb
-      .from("faq_questions")
-      .select("question")
-      .eq("customer_id", customer_id)
-      .ilike("question", `%${clean}%`)
-      .order("question", { ascending: true })
-      .limit(6);
+      // 2️⃣ FALLBACK: contains match if prefix fails
+      if (!data || data.length === 0) {
+        const res = await sb
+          .from("faq_questions")
+          .select("question")
+          .eq("customer_id", customer_id)
+          .ilike("question", `%${clean}%`)
+          .limit(8);
 
-    data = res.data;
-  }
+        data = res.data;
+      }
 
-  if (!data || data.length === 0) {
-    hideSuggestions();
-    return;
-  }
+      if (!data || data.length === 0) {
+        hideSuggestions();
+        return;
+      }
 
-  // =========================
-  // RENDER
-  // =========================
-  suggestionsBox.innerHTML = "";
-
-  data.forEach((item) => {
-    const div = document.createElement("div");
-    div.className = "cw-suggestion";
-    div.innerText = item.question;
-
-    div.onclick = () => {
-      input.value = item.question;
-      hideSuggestions();
-    };
-
-    suggestionsBox.appendChild(div);
-  });
-
-  suggestionsBox.style.display = "block";
-}
+      renderSuggestions(data);
+    }
 
     // =========================
     // SEND MESSAGE
@@ -298,15 +293,13 @@
     }
 
     // =========================
-    // EVENTS (FIXED DEBOUNCE)
+    // EVENTS
     // =========================
     input.addEventListener("input", () => {
       clearTimeout(debounceTimer);
 
-      const value = input.value;
-
       debounceTimer = setTimeout(() => {
-        fetchSuggestions(value);
+        fetchSuggestions(input.value);
       }, 200);
     });
 
@@ -315,21 +308,6 @@
     });
 
     button.onclick = sendMessage;
-
-    // =========================
-    // THEME
-    // =========================
-    const { data } = await sb
-      .from("chatbot_signups")
-      .select("theme_color")
-      .eq("customer_id", customer_id)
-      .single();
-
-    if (data?.theme_color) {
-      icon.style.background = data.theme_color;
-      header.style.background = data.theme_color;
-      button.style.background = data.theme_color;
-    }
   }
 
   init();
