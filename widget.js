@@ -207,43 +207,70 @@
     // 🔥 FIXED SUGGESTIONS (IMPORTANT)
     // =========================
     async function fetchSuggestions(keyword) {
-      const clean = keyword.trim().toLowerCase();
+  const clean = keyword.trim().toLowerCase();
 
-      if (!clean) {
-        hideSuggestions();
-        return;
-      }
+  if (!clean) {
+    hideSuggestions();
+    return;
+  }
 
-      const { data, error } = await sb
-        .from("faq_questions")
-        .select("question")
-        .eq("customer_id", customer_id)
-        .ilike("question", `%${clean}%`)   // ✅ FIXED HERE
-        .order("question", { ascending: true })
-        .limit(6);
+  // =========================
+  // STEP 1: PREFIX MATCH (BEST)
+  // =========================
+  let { data, error } = await sb
+    .from("faq_questions")
+    .select("question")
+    .eq("customer_id", customer_id)
+    .ilike("question", `${clean}%`)
+    .order("question", { ascending: true })
+    .limit(6);
 
-      if (error || !data?.length) {
-        hideSuggestions();
-        return;
-      }
+  if (error) {
+    console.error(error);
+    hideSuggestions();
+    return;
+  }
 
-      suggestionsBox.innerHTML = "";
+  // =========================
+  // STEP 2: FALLBACK MATCH (if empty)
+  // =========================
+  if (!data || data.length === 0) {
+    const res = await sb
+      .from("faq_questions")
+      .select("question")
+      .eq("customer_id", customer_id)
+      .ilike("question", `%${clean}%`)
+      .order("question", { ascending: true })
+      .limit(6);
 
-      data.forEach((item) => {
-        const div = document.createElement("div");
-        div.className = "cw-suggestion";
-        div.innerText = item.question;
+    data = res.data;
+  }
 
-        div.onclick = () => {
-          input.value = item.question;
-          hideSuggestions();
-        };
+  if (!data || data.length === 0) {
+    hideSuggestions();
+    return;
+  }
 
-        suggestionsBox.appendChild(div);
-      });
+  // =========================
+  // RENDER
+  // =========================
+  suggestionsBox.innerHTML = "";
 
-      suggestionsBox.style.display = "block";
-    }
+  data.forEach((item) => {
+    const div = document.createElement("div");
+    div.className = "cw-suggestion";
+    div.innerText = item.question;
+
+    div.onclick = () => {
+      input.value = item.question;
+      hideSuggestions();
+    };
+
+    suggestionsBox.appendChild(div);
+  });
+
+  suggestionsBox.style.display = "block";
+}
 
     // =========================
     // SEND MESSAGE
