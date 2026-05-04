@@ -5,25 +5,7 @@
   const SUPABASE_KEY = "sb_publishable_gWMY1sQRn3fqip0JfAQPRQ_F79rlYyZ";
 
   // =========================
-  // SITE KEY (NOT customer_id)
-  // =========================
-  function getSiteKey() {
-    const script =
-      document.currentScript ||
-      document.querySelector("script[data-site-key]");
-
-    return script?.getAttribute("data-site-key") || null;
-  }
-
-  const SITE_KEY = getSiteKey();
-
-  if (!SITE_KEY) {
-    console.error("❌ Missing site-key");
-    return;
-  }
-
-  // =========================
-  // CUSTOMER ID (FIXED v2)
+  // CUSTOMER ID (FIXED)
   // =========================
   function getCustomerId() {
     let id = localStorage.getItem("cw_customer_id");
@@ -36,7 +18,7 @@
     return id;
   }
 
-  const CUSTOMER_ID = getCustomerId();
+  const customer_id = getCustomerId();
 
   // =========================
   // LOAD SUPABASE
@@ -58,13 +40,125 @@
 
     const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+    let debounceTimer;
+
     // =========================
-    // UI (UNCHANGED)
+    // STYLES
     // =========================
     const style = document.createElement("style");
-    style.innerHTML = `/* (keep your existing styles unchanged) */`;
+    style.innerHTML = `
+      #cw-icon {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: #007bff;
+        color: #fff;
+        padding: 14px;
+        border-radius: 50%;
+        cursor: pointer;
+        z-index: 9999;
+        font-size: 20px;
+      }
+
+      #cw-box {
+        position: fixed;
+        bottom: 80px;
+        right: 20px;
+        width: 320px;
+        height: 420px;
+        background: #fff;
+        border-radius: 12px;
+        border: 1px solid #ddd;
+        display: none;
+        flex-direction: column;
+        z-index: 9999;
+        font-family: Arial;
+        overflow: hidden;
+      }
+
+      #cw-header {
+        padding: 10px;
+        color: #fff;
+        font-weight: bold;
+      }
+
+      #cw-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 10px;
+      }
+
+      .cw-msg {
+        margin: 6px 0;
+        padding: 6px 10px;
+        border-radius: 8px;
+        max-width: 80%;
+      }
+
+      .cw-user {
+        background: #e6f0ff;
+        margin-left: auto;
+        text-align: right;
+      }
+
+      .cw-bot {
+        background: #f1f1f1;
+        margin-right: auto;
+      }
+
+      #cw-input {
+        display: flex;
+        border-top: 1px solid #ccc;
+        position: relative;
+      }
+
+      #cw-input input {
+        flex: 1;
+        padding: 10px;
+        border: none;
+        outline: none;
+      }
+
+      #cw-input button {
+        padding: 10px;
+        border: none;
+        color: #fff;
+        cursor: pointer;
+        background: #007bff;
+      }
+
+      /* Suggestions */
+      #cw-suggestions {
+        position: absolute;
+        bottom: 50px;
+        left: 0;
+        right: 0;
+        max-height: 160px;
+        overflow-y: auto;
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 10px;
+        box-shadow: 0 6px 18px rgba(0,0,0,0.15);
+        display: none;
+        z-index: 10000;
+      }
+
+      .cw-suggestion {
+        padding: 8px;
+        cursor: pointer;
+        border-bottom: 1px solid #eee;
+        font-size: 14px;
+      }
+
+      .cw-suggestion:hover {
+        background: #f5f5f5;
+      }
+    `;
     document.head.appendChild(style);
 
+    // =========================
+    // UI
+    // =========================
     const icon = document.createElement("div");
     icon.id = "cw-icon";
     icon.innerText = "🤖";
@@ -75,6 +169,7 @@
     box.innerHTML = `
       <div id="cw-header">Assistant</div>
       <div id="cw-messages"></div>
+
       <div id="cw-input">
         <div id="cw-suggestions"></div>
         <input type="text" placeholder="Ask something..." />
@@ -92,6 +187,8 @@
     const input = box.querySelector("input");
     const button = box.querySelector("button");
     const messages = box.querySelector("#cw-messages");
+    const suggestionsBox = box.querySelector("#cw-suggestions");
+    const header = box.querySelector("#cw-header");
 
     function addMessage(text, type) {
       const div = document.createElement("div");
@@ -101,8 +198,55 @@
       messages.scrollTop = messages.scrollHeight;
     }
 
+    function hideSuggestions() {
+      suggestionsBox.innerHTML = "";
+      suggestionsBox.style.display = "none";
+    }
+
     // =========================
-    // 🔥 V2 API CALL (IMPORTANT FIX)
+    // 🔥 FIXED SUGGESTIONS (IMPORTANT)
+    // =========================
+    async function fetchSuggestions(keyword) {
+      const clean = keyword.trim().toLowerCase();
+
+      if (!clean) {
+        hideSuggestions();
+        return;
+      }
+
+      const { data, error } = await sb
+        .from("faq_questions")
+        .select("question")
+        .eq("customer_id", customer_id)
+        .ilike("question", `%${clean}%`)   // ✅ FIXED HERE
+        .order("question", { ascending: true })
+        .limit(6);
+
+      if (error || !data?.length) {
+        hideSuggestions();
+        return;
+      }
+
+      suggestionsBox.innerHTML = "";
+
+      data.forEach((item) => {
+        const div = document.createElement("div");
+        div.className = "cw-suggestion";
+        div.innerText = item.question;
+
+        div.onclick = () => {
+          input.value = item.question;
+          hideSuggestions();
+        };
+
+        suggestionsBox.appendChild(div);
+      });
+
+      suggestionsBox.style.display = "block";
+    }
+
+    // =========================
+    // SEND MESSAGE
     // =========================
     async function sendMessage() {
       const question = input.value.trim();
@@ -110,27 +254,34 @@
 
       addMessage(question, "cw-user");
       input.value = "";
+      hideSuggestions();
 
-      const res = await fetch(
-        `${SUPABASE_URL}/functions/v1/chat-handler`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${SUPABASE_KEY}`
-          },
-          body: JSON.stringify({
-            site_key: SITE_KEY,
-            customer_id: CUSTOMER_ID,
-            message: question
-          })
-        }
-      );
+      const { data } = await sb
+        .from("faq_questions")
+        .select("answer")
+        .eq("customer_id", customer_id)
+        .ilike("question", `%${question}%`)
+        .limit(1);
 
-      const data = await res.json();
-
-      addMessage(data.reply || "No response", "cw-bot");
+      if (data?.length) {
+        addMessage(data[0].answer, "cw-bot");
+      } else {
+        addMessage("Sorry, I don't know that.", "cw-bot");
+      }
     }
+
+    // =========================
+    // EVENTS (FIXED DEBOUNCE)
+    // =========================
+    input.addEventListener("input", () => {
+      clearTimeout(debounceTimer);
+
+      const value = input.value;
+
+      debounceTimer = setTimeout(() => {
+        fetchSuggestions(value);
+      }, 200);
+    });
 
     input.addEventListener("keypress", (e) => {
       if (e.key === "Enter") sendMessage();
@@ -139,17 +290,17 @@
     button.onclick = sendMessage;
 
     // =========================
-    // LOAD THEME (SAFE)
+    // THEME
     // =========================
     const { data } = await sb
       .from("chatbot_signups")
       .select("theme_color")
-      .eq("site_key", SITE_KEY)
+      .eq("customer_id", customer_id)
       .single();
 
     if (data?.theme_color) {
       icon.style.background = data.theme_color;
-      box.querySelector("#cw-header").style.background = data.theme_color;
+      header.style.background = data.theme_color;
       button.style.background = data.theme_color;
     }
   }
